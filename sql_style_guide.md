@@ -32,12 +32,10 @@
 
 ## Overview
 
-This is the SQL style guide for the data analytics team. Follow these
-conventions across all queries, models, and schema definitions to keep code
-easy to read, review, and hand off.
-
-Pick a style and stick to it. Where this guide is silent, default to
-consistency with the surrounding code.
+This guide defines SQL conventions for our analytics team. Pick a style and
+stick to it. Consistency within a query matters more than which specific
+convention you choose—but following this guide makes code easier to review,
+share, and maintain.
 
 SQL style guide by [Simon Holywell][simon] is licensed under a [Creative Commons
 Attribution-ShareAlike 4.0 International License][licence].
@@ -50,97 +48,94 @@ Based on a work at [https://www.sqlstyle.guide/][sqlstyleguide].
 * Use consistent and descriptive identifiers and names.
 * Make judicious use of white space and indentation to make code easier to read.
 * Store [ISO 8601][iso-8601] compliant time and date information
-  (`YYYY-MM-DDTHH:MM:SS.SSSSS`).
-* Try to only use standard SQL functions instead of vendor-specific functions for
-  reasons of portability.
-* Keep code succinct and devoid of redundant SQL—such as unnecessary quoting or
-  parentheses or `WHERE` clauses that can otherwise be derived.
-* Include comments in SQL code where necessary. Use the C style opening `/*` and
-  closing `*/` where possible otherwise precede comments with `--` and finish
-  them with a new line.
+  (`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SS`).
+* Prefer standard SQL functions over vendor-specific ones where possible.
+* Keep code succinct—avoid redundant parentheses, unnecessary quoting, or
+  `WHERE` clauses that can be derived another way.
+* Comment SQL where the intent is not self-evident. Use `--` for single-line
+  comments and `/* */` for blocks.
 
 ```sql
-SELECT file_hash  -- stored ssdeep hash
-  FROM file_system
- WHERE file_name = '.vimrc';
+SELECT user_id,  -- anonymised identifier
+       event_date
+  FROM events
+ WHERE event_type = 'purchase';
 ```
+
 ```sql
-/* Updating the file record after writing to the file */
-UPDATE file_system
-   SET file_modified_date = '1980-02-22 13:19:01.00000',
-       file_size = 209732
- WHERE file_name = '.vimrc';
+/*
+  Daily active users: counts distinct users who triggered
+  any event on a given day.
+*/
+SELECT event_date,
+       COUNT(DISTINCT user_id) AS dau
+  FROM events
+ GROUP BY event_date;
 ```
 
 ### Avoid
 
-* camelCase—it is difficult to scan quickly.
-* Descriptive prefixes or Hungarian notation such as `sp_` or `tbl`.
-* Plurals—use the more natural collective term where possible instead. For example
-  `staff` instead of `employees` or `people` instead of `individuals`.
-* Quoted identifiers—if you must use them then stick to SQL-92 double quotes for
-  portability (you may need to configure your SQL server to support this depending
-  on vendor).
-* Object-oriented design principles should not be applied to SQL or database
-  structures.
+* `camelCase`—it is harder to scan quickly than `snake_case`.
+* Descriptive prefixes or Hungarian notation such as `tbl_` or `v_`.
+* Plurals—prefer collective or singular nouns. Use `staff` rather than
+  `employees`, `event` rather than `events` where sensible.
+* Quoted identifiers unless absolutely necessary. If you must use them, prefer
+  SQL-92 double quotes (`"column"`) over back-ticks.
+* Applying object-oriented design principles to SQL—they do not translate well
+  to relational data.
 
 ## Naming conventions
 
 ### General
 
-* Ensure the name is unique and does not exist as a
-  [reserved keyword][reserved-keywords].
-* Keep the length to a maximum of 30 bytes—in practice this is 30 characters
-  unless you are using a multi-byte character set.
-* Names must begin with a letter and may not end with an underscore.
-* Only use letters, numbers and underscores in names.
-* Avoid the use of multiple consecutive underscores—these can be hard to read.
-* Use underscores where you would naturally include a space in the name (first
-  name becomes `first_name`).
-* Avoid abbreviations and if you have to use them make sure they are commonly
+* Names must be unique and must not clash with [reserved keywords][reserved-keywords].
+* Keep names to a maximum of 30 characters.
+* Begin with a letter; do not end with an underscore.
+* Use only letters, numbers and underscores.
+* Avoid multiple consecutive underscores—they are hard to read.
+* Use underscores where you would naturally use a space (`first_name` not
+  `firstname`).
+* Avoid abbreviations; when you must abbreviate, use ones that are widely
   understood.
 
 ```sql
-SELECT first_name
-  FROM staff;
+SELECT customer_id
+  FROM orders;
 ```
 
 ### Tables
 
-* Use a collective name or, less ideally, a plural form. For example (in order of
-  preference) `staff` and `employees`.
-* Do not prefix with `tbl` or any other such descriptive prefix or Hungarian
-  notation.
-* Never give a table the same name as one of its columns and vice versa.
-* Avoid, where possible, concatenating two table names together to create the name
-  of a relationship table. Rather than `cars_mechanics` prefer `services`.
+* Use a collective or singular name (`staff`, `order`, `session`).
+* Do not prefix with `tbl`, `vw`, or any other notation.
+* Never give a table the same name as one of its columns.
+* For relationship or bridge tables, choose a descriptive noun rather than
+  concatenating table names (`assignment` rather than `staff_projects`).
 
 ### Columns
 
 * Always use the singular name.
-* Where possible avoid simply using `id` as the primary identifier for the table.
-* Do not add a column with the same name as its table and vice versa.
-* Always use lowercase except where it may make sense not to such as proper nouns.
+* Avoid using `id` as a bare column name—prefer `user_id`, `order_id`, etc.
+* Do not add a column with the same name as its table.
+* Use lowercase throughout.
 
 ### Aliasing or correlations
 
-* Should relate in some way to the object or expression they are aliasing.
-* As a rule of thumb the correlation name should be the first letter of each word
-  in the object's name.
-* If there is already a correlation with the same name then append a number.
-* Always include the `AS` keyword—makes it easier to read as it is explicit.
-* For computed data (`SUM()` or `AVG()`) use the name you would give it were it
-  a column defined in the schema.
+* Aliases should relate meaningfully to the object or expression they alias.
+* As a rule of thumb, use the initial letter of each word in the object name.
+* If two aliases would collide, append a number (`s1`, `s2`).
+* Always include the `AS` keyword—it makes intent explicit.
+* Alias computed columns with the name you would give them in a schema
+  definition.
 
 ```sql
-SELECT first_name AS fn
-  FROM staff AS s1
-  JOIN students AS s2
-    ON s2.mentor_id = s1.staff_num;
+SELECT customer_id AS cid
+  FROM orders AS o1
+  JOIN returns AS r1
+    ON r1.order_id = o1.order_id;
 ```
 ```sql
-SELECT SUM(s.monitor_tally) AS monitor_total
-  FROM staff AS s;
+SELECT SUM(ol.line_revenue) AS revenue_total
+  FROM order_lines AS ol;
 ```
 
 ### Uniform suffixes
@@ -168,19 +163,21 @@ and understood easily from SQL code. Use the correct suffix where appropriate.
 
 ### Reserved words
 
-Always use uppercase for the [reserved keywords][reserved-keywords]
+Always use uppercase for [reserved keywords][reserved-keywords]
 like `SELECT` and `WHERE`.
 
-It is best to avoid the abbreviated keywords and use the full length ones where
-available (prefer `ABSOLUTE` to `ABS`).
+Prefer the full keyword over abbreviations where both exist (`ABSOLUTE` rather
+than `ABS`). Prefer `INNER JOIN` over `JOIN` when the join type matters for
+clarity.
 
-Do not use database server specific keywords where an ANSI SQL keyword already
-exists performing the same function. This helps to make the code more portable.
+Prefer standard ANSI SQL keywords over vendor-specific alternatives when both
+produce identical results.
 
 ```sql
-SELECT model_num
-  FROM phones AS p
- WHERE p.release_date > '2014-09-30';
+SELECT user_id,
+       event_type
+  FROM events AS e
+ WHERE e.event_date > '2024-01-01';
 ```
 
 ### White space
@@ -196,23 +193,23 @@ the readers eye to scan over the code and separate the keywords from the
 implementation detail. Rivers are [bad in typography][rivers], but helpful here.
 
 ```sql
-(SELECT f.species_name,
-        AVG(f.height) AS average_height, AVG(f.diameter) AS average_diameter
-   FROM flora AS f
-  WHERE f.species_name = 'Banksia'
-     OR f.species_name = 'Sheoak'
-     OR f.species_name = 'Wattle'
-  GROUP BY f.species_name, f.observation_date)
+(SELECT channel,
+        COUNT(session_id) AS session_count, SUM(revenue) AS total_revenue
+   FROM web_sessions AS w
+  WHERE w.channel = 'organic'
+     OR w.channel = 'paid_search'
+     OR w.channel = 'email'
+  GROUP BY channel, event_date)
 
   UNION ALL
 
-(SELECT b.species_name,
-        AVG(b.height) AS average_height, AVG(b.diameter) AS average_diameter
-   FROM botanic_garden_flora AS b
-  WHERE b.species_name = 'Banksia'
-     OR b.species_name = 'Sheoak'
-     OR b.species_name = 'Wattle'
-  GROUP BY b.species_name, b.observation_date);
+(SELECT channel,
+        COUNT(session_id) AS session_count, SUM(revenue) AS total_revenue
+   FROM app_sessions AS a
+  WHERE a.channel = 'organic'
+     OR a.channel = 'paid_search'
+     OR a.channel = 'email'
+  GROUP BY channel, event_date);
 ```
 
 Notice that `SELECT`, `FROM`, etc. are all right aligned while the actual column
@@ -226,10 +223,10 @@ Although not exhaustive always include spaces:
   comma or semicolon.
 
 ```sql
-SELECT a.title, a.release_date, a.recording_date
-  FROM albums AS a
- WHERE a.title = 'Charcoal Lane'
-    OR a.title = 'The New Danger';
+SELECT o.order_id, o.order_date, o.order_status
+  FROM orders AS o
+ WHERE o.customer_id = 'C-001'
+    OR o.customer_id = 'C-002';
 ```
 
 #### Line spacing
@@ -245,26 +242,26 @@ Always include newlines/vertical space:
 
 Keeping all the keywords aligned to the righthand side and the values left aligned
 creates a uniform gap down the middle of the query. It also makes it much easier to
-to quickly scan over the query definition.
+quickly scan over the query definition.
 
 ```sql
-INSERT INTO albums (title, release_date, recording_date)
-VALUES ('Charcoal Lane', '1990-01-01 01:01:01.00000', '1990-01-01 01:01:01.00000'),
-       ('The New Danger', '2008-01-01 01:01:01.00000', '1990-01-01 01:01:01.00000');
+INSERT INTO orders (customer_id, order_date, order_status)
+VALUES ('C-001', '2024-01-15 09:23:00.00000', 'completed'),
+       ('C-002', '2024-01-15 11:47:00.00000', 'pending');
 ```
 
 ```sql
-UPDATE albums
-   SET release_date = '1990-01-01 01:01:01.00000'
- WHERE title = 'The New Danger';
+UPDATE orders
+   SET order_status = 'completed'
+ WHERE order_id = 1001;
 ```
 
 ```sql
-SELECT a.title,
-       a.release_date, a.recording_date, a.production_date -- grouped dates together
-  FROM albums AS a
- WHERE a.title = 'Charcoal Lane'
-    OR a.title = 'The New Danger';
+SELECT o.order_id,
+       o.order_date, o.order_status, o.updated_at -- grouped order metadata
+  FROM orders AS o
+ WHERE o.customer_id = 'C-001'
+    OR o.customer_id = 'C-002';
 ```
 
 ### Indentation
@@ -278,25 +275,25 @@ Joins should be indented to the other side of the river and grouped with a new
 line where necessary.
 
 ```sql
-SELECT r.last_name
-  FROM riders AS r
-       INNER JOIN bikes AS b
-       ON r.bike_vin_num = b.vin_num
-          AND b.engine_tally > 2
+SELECT o.order_id
+  FROM orders AS o
+       INNER JOIN customers AS c
+       ON o.customer_id = c.customer_id
+          AND c.account_status = 'active'
 
-       INNER JOIN crew AS c
-       ON r.crew_chief_last_name = c.last_name
-          AND c.chief = 'Y';
+       INNER JOIN order_lines AS ol
+       ON o.order_id = ol.order_id
+          AND ol.is_refunded_flag = 'N';
 ```
 
 The exception to this is when using just the `JOIN` keyword where it should be
 before the river.
 
 ```sql
-SELECT r.last_name
-  FROM riders AS r
-  JOIN bikes AS b
-    ON r.bike_vin_num = b.vin_num
+SELECT o.order_id
+  FROM orders AS o
+  JOIN customers AS c
+    ON o.customer_id = c.customer_id
 ```
 
 #### Subqueries
@@ -307,17 +304,17 @@ the closing parenthesis on a new line at the same character position as its
 opening partner—this is especially true where you have nested subqueries.
 
 ```sql
-SELECT r.last_name,
-       (SELECT MAX(YEAR(championship_date))
-          FROM champions AS c
-         WHERE c.last_name = r.last_name
-           AND c.confirmed = 'Y') AS last_championship_year
-  FROM riders AS r
- WHERE r.last_name IN
-       (SELECT c.last_name
-          FROM champions AS c
-         WHERE YEAR(championship_date) > '2008'
-           AND c.confirmed = 'Y');
+SELECT c.customer_id,
+       (SELECT MAX(order_date)
+          FROM orders AS o
+         WHERE o.customer_id = c.customer_id
+           AND o.order_status = 'completed') AS last_order_date
+  FROM customers AS c
+ WHERE c.customer_id IN
+       (SELECT o.customer_id
+          FROM orders AS o
+         WHERE o.order_date > '2024-01-01'
+           AND o.order_status = 'completed');
 ```
 
 ### Preferred formalisms
@@ -336,14 +333,16 @@ SELECT r.last_name,
   Never use `= NULL` or `!= NULL`, which produce undefined results in SQL.
 
 ```sql
-SELECT CASE postcode
-       WHEN 'BN1' THEN 'Brighton'
-       WHEN 'EH1' THEN 'Edinburgh'
-       END AS city
-  FROM office_locations
- WHERE country = 'United Kingdom'
-   AND opening_time BETWEEN 8 AND 9
-   AND postcode IN ('EH1', 'BN1', 'NN1', 'KW1');
+SELECT CASE country_code
+            WHEN 'US' THEN 'North America'
+            WHEN 'GB' THEN 'EMEA'
+            ELSE 'Other'
+       END AS region,
+       COUNT(*) AS customer_count
+  FROM customers
+ WHERE is_active_flag = 'Y'
+   AND created_at BETWEEN '2024-01-01' AND '2024-12-31'
+   AND plan_type IN ('starter', 'growth', 'enterprise');
 ```
 
 ```sql
@@ -362,6 +361,8 @@ nested subqueries.
 
 * Name each CTE to describe what it contains, not how it is computed
   (`daily_revenue` rather than `step_1` or `subquery`).
+* Use `WITH` at the top level; list additional CTEs as a comma-separated
+  sequence beneath it.
 * Place `AS (` on the same line as the CTE name.
 * Indent the body of each CTE by four (4) spaces.
 * Separate consecutive CTEs with a blank line after the closing `)`.
@@ -371,7 +372,7 @@ nested subqueries.
 #### Avoid
 
 * Generic names (`cte`, `temp`, `data`, `results`).
-* CTEs that are only referenced once and add no clarity over an inline subquery.
+* Using CTEs where a simple subquery would be clearer.
 * Deeply chaining CTEs where later steps reference many earlier ones—restructure
   or split the query instead.
 
@@ -434,13 +435,14 @@ Indent column definitions by four (4) spaces within the `CREATE` definition.
   intelligible names automatically.
 
 ```sql
-CREATE TABLE staff (
-    PRIMARY KEY (staff_num),
-    staff_num      INT(5)       NOT NULL,
-    first_name     VARCHAR(100) NOT NULL,
-    pens_in_drawer INT(2)       NOT NULL,
-                   CONSTRAINT pens_in_drawer_range
-                   CHECK(pens_in_drawer BETWEEN 1 AND 99)
+CREATE TABLE orders (
+    PRIMARY KEY (order_id),
+    order_id       BIGINT         NOT NULL,
+    customer_id    BIGINT         NOT NULL,
+    order_status   VARCHAR(20)    NOT NULL,
+    order_total    DECIMAL(10, 2) NOT NULL,
+                   CONSTRAINT order_total_positive
+                   CHECK(order_total >= 0)
 );
 ```
 
