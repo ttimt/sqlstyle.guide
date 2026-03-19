@@ -1,20 +1,43 @@
 # SQL style guide
 
+## Contents
+
+- [Overview](#overview)
+- [General](#general)
+  - [Do](#do)
+  - [Avoid](#avoid)
+- [Naming conventions](#naming-conventions)
+  - [General](#general-1)
+  - [Tables](#tables)
+  - [Columns](#columns)
+  - [Aliasing or correlations](#aliasing-or-correlations)
+  - [Uniform suffixes](#uniform-suffixes)
+- [Query syntax](#query-syntax)
+  - [Reserved words](#reserved-words)
+  - [White space](#white-space)
+    - [Spaces](#spaces)
+    - [Line spacing](#line-spacing)
+  - [Indentation](#indentation)
+    - [Joins](#joins)
+    - [Subqueries](#subqueries)
+  - [Preferred formalisms](#preferred-formalisms)
+  - [Common table expressions](#common-table-expressions)
+    - [Do](#do-1)
+    - [Avoid](#avoid-1)
+- [Create syntax](#create-syntax)
+  - [Choosing data types](#choosing-data-types)
+  - [Constraints and keys](#constraints-and-keys)
+- [Appendix](#appendix)
+  - [Reserved keyword reference](#reserved-keyword-reference)
+
 ## Overview
 
-You can use this set of guidelines, [fork them][fork] or make your own - the
-key here is that you pick a style and stick to it. To suggest changes
-or fix bugs please open an [issue][issue] or [pull request][pull] on GitHub.
+This is the SQL style guide for the data analytics team. Follow these
+conventions across all queries, models, and schema definitions to keep code
+easy to read, review, and hand off.
 
-These guidelines are designed to be compatible with Joe Celko's [SQL Programming
-Style][celko] book to make adoption for teams who have already read that book
-easier. This guide is a little more opinionated in some areas and in others a
-little more relaxed. It is certainly more succinct where [Celko's book][celko]
-contains anecdotes and reasoning behind each rule as thoughtful prose.
-
-It is easy to include this guide in [Markdown format][dl-md] as a part of a
-project's code base or reference it here for anyone on the project to freely
-read—much harder with a physical book.
+Pick a style and stick to it. Where this guide is silent, default to
+consistency with the surrounding code.
 
 SQL style guide by [Simon Holywell][simon] is licensed under a [Creative Commons
 Attribution-ShareAlike 4.0 International License][licence].
@@ -120,12 +143,6 @@ SELECT SUM(s.monitor_tally) AS monitor_total
   FROM staff AS s;
 ```
 
-### Stored procedures
-
-* The name must contain a verb.
-* Do not prefix with `sp_` or any other such descriptive prefix or Hungarian
-  notation.
-
 ### Uniform suffixes
 
 The following suffixes have a universal meaning ensuring the columns can be read
@@ -139,10 +156,13 @@ and understood easily from SQL code. Use the correct suffix where appropriate.
 * `_name`—signifies a name such as `first_name`.
 * `_seq`—contains a contiguous sequence of values.
 * `_date`—denotes a column that contains the date of something.
-* `_tally`—a count.
+* `_at`—a full timestamp such as `created_at` or `updated_at`.
+* `_count`—a count of rows or occurrences such as `event_count`.
 * `_size`—the size of something such as a file size or clothing.
 * `_addr`—an address for the record could be physical or intangible such as
   `ip_addr`.
+* `_flag`—a boolean indicator; alternatively use an `is_` prefix such as
+  `is_active` or `is_deleted`.
 
 ## Query syntax
 
@@ -310,6 +330,10 @@ SELECT r.last_name,
 * Avoid the use of `UNION` clauses and temporary tables where possible. If the
   schema can be optimised to remove the reliance on these features then it most
   likely should be.
+* Use `COALESCE()` to handle `NULL` fallbacks in expressions—it is standard SQL
+  and portable across engines.
+* Use `IS NULL` and `IS NOT NULL` to test for the presence or absence of a value.
+  Never use `= NULL` or `!= NULL`, which produce undefined results in SQL.
 
 ```sql
 SELECT CASE postcode
@@ -320,6 +344,70 @@ SELECT CASE postcode
  WHERE country = 'United Kingdom'
    AND opening_time BETWEEN 8 AND 9
    AND postcode IN ('EH1', 'BN1', 'NN1', 'KW1');
+```
+
+```sql
+SELECT COALESCE(revenue_total, 0) AS revenue_total
+  FROM daily_summary
+ WHERE cohort_date IS NOT NULL;
+```
+
+### Common table expressions
+
+Common table expressions (CTEs) make complex analytical queries easier to read by
+breaking them into named, sequentially defined steps. Prefer CTEs over deeply
+nested subqueries.
+
+#### Do
+
+* Name each CTE to describe what it contains, not how it is computed
+  (`daily_revenue` rather than `step_1` or `subquery`).
+* Place `AS (` on the same line as the CTE name.
+* Indent the body of each CTE by four (4) spaces.
+* Separate consecutive CTEs with a blank line after the closing `)`.
+* Order CTEs so that each one depends only on those defined before it.
+* Keep each CTE focused on a single logical step.
+
+#### Avoid
+
+* Generic names (`cte`, `temp`, `data`, `results`).
+* CTEs that are only referenced once and add no clarity over an inline subquery.
+* Deeply chaining CTEs where later steps reference many earlier ones—restructure
+  or split the query instead.
+
+```sql
+WITH
+daily_revenue AS (
+    SELECT order_date,
+           SUM(order_total)  AS revenue_total,
+           COUNT(order_id)   AS order_count
+      FROM orders
+     WHERE order_status = 'completed'
+     GROUP BY order_date
+),
+
+customer_first_order AS (
+    SELECT customer_id,
+           MIN(order_date) AS first_order_at
+      FROM orders
+     GROUP BY customer_id
+),
+
+daily_new_customers AS (
+    SELECT first_order_at        AS order_date,
+           COUNT(customer_id)    AS new_customer_count
+      FROM customer_first_order
+     GROUP BY first_order_at
+)
+
+SELECT dr.order_date,
+       dr.revenue_total,
+       dr.order_count,
+       COALESCE(dnc.new_customer_count, 0) AS new_customer_count
+  FROM daily_revenue AS dr
+  LEFT JOIN daily_new_customers AS dnc
+    ON dr.order_date = dnc.order_date
+ ORDER BY dr.order_date;
 ```
 
 ## Create syntax
@@ -338,75 +426,12 @@ Indent column definitions by four (4) spaces within the `CREATE` definition.
   point mathematics otherwise prefer `NUMERIC` and `DECIMAL` at all times. Floating
   point rounding errors are a nuisance!
 
-### Specifying default values
-
-* The default value must be the same type as the column—if a column is declared
-  a `DECIMAL` do not provide an `INTEGER` default value.
-* Default values must follow the data type declaration and come before any
-  `NOT NULL` statement.
-
 ### Constraints and keys
-
-Constraints and their subset, keys, are a very important component of any
-database definition. They can quickly become very difficult to read and reason
-about though so it is important that a standard set of guidelines are followed.
-
-#### Choosing keys
-
-Deciding the column(s) that will form the keys in the definition should be a
-carefully considered activity as it will effect performance and data integrity.
-
-1. The key should be unique to some degree.
-2. Consistency in terms of data type for the value across the schema and a lower
-   likelihood of this changing in the future.
-3. Can the value be validated against a standard format (such as one published by
-   ISO)? Encouraging conformity to point 2.
-4. Keeping the key as simple as possible whilst not being scared to use compound
-   keys where necessary.
-
-It is a reasoned and considered balancing act to be performed at the definition
-of a database. Should requirements evolve in the future it is possible to make
-changes to the definitions to keep them up to date.
-
-#### Defining constraints
-
-Once the keys are decided it is possible to define them in the system using
-constraints along with field value validation.
-
-##### General
 
 * Tables must have at least one key to be complete and useful.
 * Constraints should be given a custom name excepting `UNIQUE`, `PRIMARY KEY`
   and `FOREIGN KEY` where the database vendor will generally supply sufficiently
   intelligible names automatically.
-
-##### Layout and order
-
-* Specify the primary key first right after the `CREATE TABLE` statement.
-* Constraints should be defined directly beneath the column they correspond to.
-  Indent the constraint so that it aligns to the right of the column name.
-* If it is a multi-column constraint then consider putting it as close to both
-  column definitions as possible and where this is difficult as a last resort
-  include them at the end of the `CREATE TABLE` definition.
-* If it is a table-level constraint that applies to the entire table then it
-  should also appear at the end.
-* Use alphabetical order where `ON DELETE` comes before `ON UPDATE`.
-* If it make senses to do so align each aspect of the query on the same character
-  position. For example all `NOT NULL` definitions could start at the same
-  character position. This is not hard and fast, but it certainly makes the code
-  much easier to scan and read.
-
-##### Validation
-
-* Use `LIKE` and `SIMILAR TO` constraints to ensure the integrity of strings
-  where the format is known.
-* Where the ultimate range of a numerical value is known it must be written as a
-  range `CHECK()` to prevent incorrect values entering the database or the silent
-  truncation of data too large to fit the column definition. In the least it
-  should check that the value is greater than zero in most cases.
-* `CHECK()` constraints should be kept in separate clauses to ease debugging.
-
-##### Example
 
 ```sql
 CREATE TABLE staff (
@@ -419,27 +444,11 @@ CREATE TABLE staff (
 );
 ```
 
-### Designs to avoid
-
-* Object-oriented design principles do not effectively translate to relational
-  database designs—avoid this pitfall.
-* Placing the value in one column and the units in another column. The column
-  should make the units self-evident to prevent the requirement to combine
-  columns again later in the application. Use `CHECK()` to ensure valid data is
-  inserted into the column.
-* [Entity–Attribute–Value][eav] (EAV) tables—use a specialist product intended for
-  handling such schema-less data instead.
-* Splitting up data that should be in one table across many tables because of
-  arbitrary concerns such as time-based archiving or location in a multinational
-  organisation. Later queries must then work across multiple tables with `UNION`
-  rather than just simply querying one table.
-
-
 ## Appendix
 
 ### Reserved keyword reference
 
-A list of ANSI SQL (92, 99 and 2003), MySQL 3 to 5.x, PostgreSQL 8.1, MS SQL Server 2000, MS ODBC and Oracle 10.2 reserved keywords.
+A list of ANSI SQL (92, 99 and 2003), MySQL 3 to 5.x, PostgreSQL 8.1, MS SQL Server 2000, MS ODBC and Oracle 10.2 reserved keywords. Use this as a quick reference when naming tables, columns, or aliases to avoid clashes with reserved words.
 
 ```sql
 A
@@ -1269,69 +1278,15 @@ ZEROFILL
 ZONE
 ```
 
-### Column data types
-
-These are some suggested column data types to use for maximum compatibility between database engines.
-
-#### Character types:
-
-* CHAR
-* CLOB
-* VARCHAR
-
-#### Numeric types
-
-* Exact numeric types
-    * BIGINT
-    * DECIMAL
-    * DECFLOAT
-    * INTEGER
-    * NUMERIC
-    * SMALLINT
-* Approximate numeric types
-    * DOUBLE PRECISION
-    * FLOAT
-    * REAL
-
-#### Datetime types
-
-* DATE
-* TIME
-* TIMESTAMP
-
-#### Binary types:
-
-* BINARY
-* BLOB
-* VARBINARY
-
-#### Additional types
-
-* BOOLEAN
-* INTERVAL
-* XML
-
 
 [simon]: https://www.simonholywell.com/?utm_source=sqlstyle.guide&utm_medium=link&utm_campaign=md-document
     "SimonHolywell.com"
-[issue]: https://github.com/treffynnon/sqlstyle.guide/issues
-    "SQL style guide issues on GitHub"
-[fork]: https://github.com/treffynnon/sqlstyle.guide/fork
-    "Fork SQL style guide on GitHub"
-[pull]: https://github.com/treffynnon/sqlstyle.guide/pulls/
-    "SQL style guide pull requests on GitHub"
-[celko]: https://www.amazon.com/gp/product/0120887975/ref=as_li_ss_tl?ie=UTF8&linkCode=ll1&tag=treffynnon-20&linkId=9c88eac8cd420e979675c815771313d5
-    "Joe Celko's SQL Programming Style (The Morgan Kaufmann Series in Data Management Systems)"
-[dl-md]: https://raw.githubusercontent.com/treffynnon/sqlstyle.guide/gh-pages/_includes/sqlstyle.guide.md
-    "Download the guide in Markdown format"
 [iso-8601]: https://en.wikipedia.org/wiki/ISO_8601
     "Wikipedia: ISO 8601"
 [rivers]: https://practicaltypography.com/one-space-between-sentences.html
     "Practical Typography: one space between sentences"
 [reserved-keywords]: #reserved-keyword-reference
     "Reserved keyword reference"
-[eav]: https://en.wikipedia.org/wiki/Entity%E2%80%93attribute%E2%80%93value_model
-    "Wikipedia: Entity–attribute–value model"
 [sqlstyleguide]: https://www.sqlstyle.guide/
     "SQL style guide by Simon Holywell"
 [licence]: https://creativecommons.org/licenses/by-sa/4.0/
